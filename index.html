@@ -831,7 +831,6 @@ WHISKY RED LABEL=15;20;28
 WHISKY WHITE HORSE=15;20;25
 
 `;
-var GERADO = "22 de agosto de 2026";
 
 var CAT = [];      /* [{nome, itens:[]}] */
 var TODOS = [];
@@ -1189,7 +1188,7 @@ function horas(d){
   return d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
 }
 function marcarHora(){
-  elQuando.innerHTML = "Preços de <b>" + esc(GERADO) + "</b>" + statusDosesHTML();
+  elQuando.innerHTML = statusDosesHTML();
 }
 
 /* ============ sincronização das doses com o Supabase ============ */
@@ -1270,7 +1269,7 @@ var doseQuando = null;           /* Date da última sincronização boa */
 var doseSincronizando = false;
 
 function statusDosesHTML(){
-  if (doseSincronizando || manualSincronizando || cardapioSincronizando) return " · <span class=\"status-doses\">atualizando dados…</span>";
+  if (doseSincronizando || manualSincronizando || cardapioSincronizando) return "<span class=\"status-doses\">Atualizando…</span>";
   var ranking = { embutido: 0, cache: 1, nuvem: 2 };
   var fontes = [
     { f: doseFonte, q: doseQuando },
@@ -1279,9 +1278,9 @@ function statusDosesHTML(){
   ];
   var pior = fontes[0];
   fontes.forEach(function(x){ if (ranking[x.f] < ranking[pior.f]) pior = x; });
-  if (pior.f === "nuvem") return " · <span class=\"status-doses ok\">dados às " + horas(pior.q) + "</span>";
-  if (pior.f === "cache") return " · <span class=\"status-doses\">dados de " + horas(pior.q) + " (offline)</span>";
-  return " · <span class=\"status-doses aviso\">dados não sincronizados</span>";
+  if (pior.f === "nuvem") return "<span class=\"status-doses ok\">Atualizado às " + horas(pior.q) + "</span>";
+  if (pior.f === "cache") return "<span class=\"status-doses\">Dados de " + horas(pior.q) + " (offline)</span>";
+  return "<span class=\"status-doses aviso\">Ainda não sincronizado</span>";
 }
 
 function aplicarDoses(linhas){
@@ -2130,7 +2129,7 @@ var ultimoCliqueAtualizar = 0;
 elAtualizar.addEventListener("click", function(){
   var agora = Date.now();
   if (agora - ultimoCliqueAtualizar < 120000){
-    elQuando.innerHTML = "Já está atualizado, tenta de novo daqui a pouco." + statusDosesHTML();
+    elQuando.innerHTML = "Espera um minuto e tenta de novo · " + statusDosesHTML();
     return;
   }
   ultimoCliqueAtualizar = agora;
