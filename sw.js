@@ -3,14 +3,24 @@
    e para o Chrome/Android aceitar instalar como app de verdade (não só atalho).
    Nunca mexe em pedidos para o Supabase — esses continuam indo direto pra internet. */
 
-const CACHE = "adega-noruega-v1";
-const APP_SHELL = self.location.href.replace("sw.js", "index.html");
+const CACHE = "adega-noruega-v2";
+const BASE = self.location.href.replace("sw.js", "");
+const APP_SHELL = BASE + "index.html";
+const ARQUIVOS = [
+  APP_SHELL,
+  BASE + "manifest.json",
+  BASE + "icon-192.png",
+  BASE + "icon-512.png",
+  BASE + "icon-512-maskable.png",
+  BASE + "apple-touch-icon.png"
+];
 
 self.addEventListener("install", function (event) {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE).then(function (cache) {
-      return cache.add(APP_SHELL);
+      /* se algum arquivo faltar, não impede a instalação do resto */
+      return Promise.allSettled(ARQUIVOS.map(function (u) { return cache.add(u); }));
     })
   );
 });
