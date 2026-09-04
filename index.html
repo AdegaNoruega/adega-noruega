@@ -158,6 +158,10 @@ body.entrada-tela .topo, body.entrada-tela .estado{display:none;}
 .vem{margin:3px 0 2px;font-size:12.5px;color:var(--mute);line-height:1.45;}
 .sabores{margin:9px 0 2px;padding:9px 11px;background:#fff;border:1px solid var(--line);
   border-radius:8px;font-size:13px;color:var(--ink);line-height:1.5;}
+
+.combo-fixo{border-bottom:1px solid #EFF2F7;}
+.combo-fixo-nome{padding:12px var(--gut) 0;font-size:15.5px;font-weight:550;line-height:1.28;}
+.combo-fixo .det{background:none;border-bottom:0;padding:2px var(--gut) 12px;}
 .sabores b{font-weight:650;}
 .aviso{margin:9px 0 2px;padding:9px 11px;background:var(--ouro-fundo);
   border:1px solid #F0DFB4;border-radius:8px;font-size:12.5px;color:#6B551D;line-height:1.45;}
@@ -855,9 +859,38 @@ var TODOS = [];
           var sabor = cab.indexOf("\u00a7") >= 0 ? cab.split("\u00a7")[1] : null;
           return { grupo: g, sabor: sabor, preco: Number(t[1]) };
         });
-        it = { cat: nomeCat, nome: nome, combo: true, vars: vars,
-               descRB: pedacos[1] || null, descEN: pedacos[2] || null,
-               busca: pedacos[3] || "", extras: false, doses: false };
+        var descRB = pedacos[1] || null, descEN = pedacos[2] || null, busca = pedacos[3] || "";
+
+        var saboresDistintos = [];
+        vars.forEach(function(v){
+          if (v.sabor && saboresDistintos.indexOf(v.sabor) < 0) saboresDistintos.push(v.sabor);
+        });
+
+        if (!saboresDistintos.length){
+          /* combo simples, sem rotulos — comportamento de sempre: uma linha so, abre no clique */
+          it = { cat: nomeCat, nome: nome, combo: true, vars: vars,
+                 descRB: descRB, descEN: descEN, busca: busca, extras: false, doses: false };
+          itens.push(it); TODOS.push(it);
+        } else {
+          /* combo com varios rotulos (ex: Johnnie Walker, Grey Goose): cada rotulo vira
+             um item proprio, visivel direto na lista, sem precisar abrir pra ver o preco */
+          var semSabor = vars.filter(function(v){ return !v.sabor; });
+          saboresDistintos.forEach(function(sabor){
+            var novosVars = [];
+            ["RB", "EN"].forEach(function(g){
+              var comEsseSabor = vars.filter(function(v){ return v.grupo === g && v.sabor === sabor; })[0];
+              if (comEsseSabor) { novosVars.push({ grupo: g, preco: comEsseSabor.preco }); return; }
+              var bare = semSabor.filter(function(v){ return v.grupo === g; })[0];
+              if (bare) novosVars.push({ grupo: g, preco: bare.preco });
+            });
+            if (!novosVars.length) return;
+            var itSabor = { cat: nomeCat, nome: nome + " \u2014 " + sabor.toUpperCase(), combo: true,
+                             vars: novosVars, descRB: descRB, descEN: descEN, busca: busca,
+                             extras: false, doses: false };
+            itens.push(itSabor); TODOS.push(itSabor);
+          });
+        }
+        return;
       } else {
         var extras = resto.charAt(resto.length - 1) === "+";
         if (extras) resto = resto.slice(0, -1);
@@ -1459,7 +1492,44 @@ function verQuadro(){
   elTela.innerHTML = h;
 }
 
+function variosRotulos(it){
+  if (!it.combo) return false;
+  var sabores = {};
+  it.vars.forEach(function(v){ if (v.sabor) sabores[v.sabor] = true; });
+  return Object.keys(sabores).length > 1;
+}
+
+function blocoGruposCombo(it){
+  var h = "";
+  var temCoco = /COCO|SUCO/i.test(it.descEN || PADRAO.EN);
+  var titEN = temCoco ? "Com Vibe/Baly, água de coco ou suco" : "Com Vibe/Baly";
+  [["RB", "Com Red Bull", it.descRB || PADRAO.RB],
+   ["EN", titEN, it.descEN || PADRAO.EN]]
+  .forEach(function(g){
+    var lista = it.vars.filter(function(v){ return v.grupo === g[0]; });
+    if (!lista.length) return;
+    h += '<p class="grupo-t">' + esc(g[1]) + '</p>';
+    lista.forEach(function(v){
+      h += '<div class="op"><span class="lb"><span>' +
+           esc(v.sabor ? bonito(v.sabor) : "Preço do combo") + '</span></span>';
+      h += '<span class="vl">' + brl(v.preco) + '</span></div>';
+    });
+    if (g[2]) h += '<p class="vem">' + esc(vemTexto(g[2])) + '</p>';
+  });
+  return h;
+}
+
+/* combos com vários rótulos (Johnnie Walker, Grey Goose, Smirnoff, Jack Daniels, Jim Beam...)
+   aparecem sempre abertos, com todos os preços visíveis — sem precisar clicar */
+function linhaComboFixo(it){
+  var h = '<div class="combo-fixo"><div class="combo-fixo-nome">' + esc(it.nome) + '</div>';
+  h += '<div class="det">' + blocoGruposCombo(it) + '</div></div>';
+  return h;
+}
+
 function linhaItem(it, idx){
+  if (variosRotulos(it)) return linhaComboFixo(it);
+
   var id = it.cat + "|" + it.nome + "|" + idx;
   var ab = itemAberto === id;
   var mais = temMais(it);
@@ -1475,21 +1545,7 @@ function linhaItem(it, idx){
     h += '<div class="det">';
 
     if (it.combo){
-      var temCoco = /COCO|SUCO/i.test(it.descEN || PADRAO.EN);
-      var titEN = temCoco ? "Com Vibe/Baly, água de coco ou suco" : "Com Vibe/Baly";
-      [["RB", "Com Red Bull", it.descRB || PADRAO.RB],
-       ["EN", titEN, it.descEN || PADRAO.EN]]
-      .forEach(function(g){
-        var lista = it.vars.filter(function(v){ return v.grupo === g[0]; });
-        if (!lista.length) return;
-        h += '<p class="grupo-t">' + esc(g[1]) + '</p>';
-        lista.forEach(function(v){
-          h += '<div class="op"><span class="lb"><span>' +
-               esc(v.sabor ? bonito(v.sabor) : "Preço do combo") + '</span></span>';
-          h += '<span class="vl">' + brl(v.preco) + '</span></div>';
-        });
-        if (g[2]) h += '<p class="vem">' + esc(vemTexto(g[2])) + '</p>';
-      });
+      h += blocoGruposCombo(it);
       if (it.sabores) h += '<p class="sabores"><b>Sabores:</b> ' + esc(it.sabores.join(" · ")) + '<br>Todos pelo mesmo preço.</p>';
     } else {
       var soUm = it.vars.length === 1 && !it.vars[0].rot;
