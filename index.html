@@ -196,6 +196,13 @@ body.entrada-tela .topo, body.entrada-tela .estado{display:none;}
 .ro{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #F0F0F0;}
 .ro:first-of-type{border-top:0;}
 .ro .nm{flex:1;min-width:0;font-size:14px;color:#444;}
+/* produto desativado no OlaClick: continua na tabela, com cor diferente e aviso */
+.selo-pausa{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:999px;
+  background:var(--ouro-fundo);border:1px solid var(--ouro);color:#8A5A00;
+  font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;vertical-align:2px;white-space:nowrap;}
+.item.pausado,.ro.pausado{background:#FFFBF0;box-shadow:inset 3px 0 0 var(--ouro);}
+.item.pausado .nm,.ro.pausado .nm{color:#7A6A4A;}
+.item.pausado .pr .v{color:#7A6A4A;}
 .ro .pr{flex:0 0 auto;text-align:right;}
 .ro .pr .v{font-size:14.5px;font-weight:650;color:#444;}
 .ro .pr .rot{display:block;font-size:11px;color:var(--mute);}
@@ -337,6 +344,7 @@ body.entrada-tela .topo, body.entrada-tela .estado{display:none;}
   .item .pr .v{font-size:16px;}
   .li{min-width:0;align-self:start;}
   .item{padding-inline:0;}
+  .item.pausado{padding-inline:12px;border-radius:6px;}
   .det{padding:2px 12px 11px;background:#F8F9FC;border-radius:0 0 8px 8px;}
   .quadro{display:none;}
 }
@@ -860,36 +868,9 @@ var TODOS = [];
           return { grupo: g, sabor: sabor, preco: Number(t[1]) };
         });
         var descRB = pedacos[1] || null, descEN = pedacos[2] || null, busca = pedacos[3] || "";
-
-        var saboresDistintos = [];
-        vars.forEach(function(v){
-          if (v.sabor && saboresDistintos.indexOf(v.sabor) < 0) saboresDistintos.push(v.sabor);
-        });
-
-        if (!saboresDistintos.length){
-          /* combo simples, sem rotulos — comportamento de sempre: uma linha so, abre no clique */
-          it = { cat: nomeCat, nome: nome, combo: true, vars: vars,
-                 descRB: descRB, descEN: descEN, busca: busca, extras: false, doses: false };
-          itens.push(it); TODOS.push(it);
-        } else {
-          /* combo com varios rotulos (ex: Johnnie Walker, Grey Goose): cada rotulo vira
-             um item proprio, visivel direto na lista, sem precisar abrir pra ver o preco */
-          var semSabor = vars.filter(function(v){ return !v.sabor; });
-          saboresDistintos.forEach(function(sabor){
-            var novosVars = [];
-            ["RB", "EN"].forEach(function(g){
-              var comEsseSabor = vars.filter(function(v){ return v.grupo === g && v.sabor === sabor; })[0];
-              if (comEsseSabor) { novosVars.push({ grupo: g, preco: comEsseSabor.preco }); return; }
-              var bare = semSabor.filter(function(v){ return v.grupo === g; })[0];
-              if (bare) novosVars.push({ grupo: g, preco: bare.preco });
-            });
-            if (!novosVars.length) return;
-            var itSabor = { cat: nomeCat, nome: nome + " \u2014 " + sabor.toUpperCase(), combo: true,
-                             vars: novosVars, descRB: descRB, descEN: descEN, busca: busca,
-                             extras: false, doses: false };
-            itens.push(itSabor); TODOS.push(itSabor);
-          });
-        }
+        var itBase = { cat: nomeCat, nome: nome, combo: true, vars: vars,
+                        descRB: descRB, descEN: descEN, busca: busca, extras: false, doses: false };
+        dividirComboPorRotulo(itBase).forEach(function(itFinal){ itens.push(itFinal); TODOS.push(itFinal); });
         return;
       } else {
         var extras = resto.charAt(resto.length - 1) === "+";
@@ -970,6 +951,14 @@ function ordenarCategorias(){
   });
 }
 
+/* "todo" = item inteiro pausado no delivery; "parte" = so uma das versoes (ex: so a Red Bull); "" = ativo */
+function estadoPausa(it){
+  if (it.pausado === true) return "todo";
+  var n = it.vars.filter(function(v){ return v.pausado; }).length;
+  if (!n) return "";
+  return n === it.vars.length ? "todo" : "parte";
+}
+
 function agrupar(){
   GRUPOS.forEach(function(g){
     var c = CAT.filter(function(x){ return x.nome === g.cat; })[0];
@@ -981,11 +970,18 @@ function agrupar(){
       }
     });
     if (achados.length < 2) return;
-    var base0 = achados[0];
-    var novo = { cat: g.cat, nome: g.nome, vars: base0.vars,
+    /* usa como base um sabor ativo, se houver; cada sabor pausado ganha o aviso no nome */
+    var ativos = achados.filter(function(x){ return estadoPausa(x) !== "todo"; });
+    var base0 = ativos[0] || achados[0];
+    var sabores = achados.map(function(x){
+      var rotulo = g.sabores[g.membros.indexOf(x.nome)] || x.nome;
+      return estadoPausa(x) === "todo" ? rotulo + " (pausado no delivery)" : rotulo;
+    });
+    var novo = { cat: g.cat, nome: g.nome,
+      vars: base0.vars.map(function(v){ var c = {}; for (var k in v) c[k] = v[k]; c.pausado = false; return c; }),
       extras: base0.extras, doses: false,
       combo: base0.combo, descRB: base0.descRB, descEN: base0.descEN,
-      sabores: g.sabores.slice(0, achados.length),
+      sabores: sabores, pausado: !ativos.length,
       busca: g.membros.join(" ") + " " + (base0.busca || "") };
     c.itens = c.itens.filter(function(x){ return achados.indexOf(x) < 0; });
     c.itens.splice(pos, 0, novo);
@@ -1021,6 +1017,37 @@ function resumoDescricao(d){
   return linhas.map(function(x){ return x.replace(/^COMBO COM\s*/i, "").replace(/COPOS 7$/, "COPOS 770"); }).join(" | ");
 }
 
+function dividirComboPorRotulo(base){
+  /* Um combo pode ter vários rótulos dentro dele (ex: Johnnie Walker tem 6 whiskies).
+     Em vez de esconder todos atrás de um clique só, cada rótulo vira um item próprio,
+     visível direto na lista — mesma lógica usada tanto na lista fixa quanto nos dados
+     ao vivo do Supabase, para as duas fontes ficarem sempre iguais. */
+  var saboresDistintos = [];
+  base.vars.forEach(function(v){
+    if (v.sabor && saboresDistintos.indexOf(v.sabor) < 0) saboresDistintos.push(v.sabor);
+  });
+  if (!saboresDistintos.length) return [base];
+
+  var semSabor = base.vars.filter(function(v){ return !v.sabor; });
+  var divididos = [];
+  saboresDistintos.forEach(function(sabor){
+    var novosVars = [];
+    ["RB", "EN"].forEach(function(g){
+      var comEsseSabor = base.vars.filter(function(v){ return v.grupo === g && v.sabor === sabor; })[0];
+      if (comEsseSabor) { novosVars.push({ grupo: g, preco: comEsseSabor.preco, pausado: !!comEsseSabor.pausado }); return; }
+      var bare = semSabor.filter(function(v){ return v.grupo === g; })[0];
+      if (bare) novosVars.push({ grupo: g, preco: bare.preco, pausado: !!bare.pausado });
+    });
+    if (!novosVars.length) return;
+    divididos.push({
+      cat: base.cat, nome: base.nome + " \u2014 " + sabor.toUpperCase(), combo: true,
+      vars: novosVars, descRB: base.descRB, descEN: base.descEN, busca: base.busca,
+      extras: false, doses: false
+    });
+  });
+  return divididos;
+}
+
 function pareiaCombos(itensCombo){
   var semRB = itensCombo.filter(function(p){ return !ehRedBullNome(p.nome); });
   var comRB = itensCombo.filter(function(p){ return ehRedBullNome(p.nome); });
@@ -1043,22 +1070,24 @@ function pareiaCombos(itensCombo){
     }
     var b = idx >= 0 ? comRB[idx] : null;
     if (idx >= 0) usados.push(idx);
-    var varsRB = b ? b.vars.map(function(v){ return { grupo: "RB", sabor: v.rot || null, preco: v.preco }; }) : [];
-    var varsEN = a.vars.map(function(v){ return { grupo: "EN", sabor: v.rot || null, preco: v.preco }; });
-    resultado.push({
+    var varsRB = b ? b.vars.map(function(v){ return { grupo: "RB", sabor: v.rot || null, preco: v.preco, pausado: !!b.pausado }; }) : [];
+    var varsEN = a.vars.map(function(v){ return { grupo: "EN", sabor: v.rot || null, preco: v.preco, pausado: !!a.pausado }; });
+    var itemMesclado = {
       cat: a.cat, nome: a.nome, combo: true, vars: varsRB.concat(varsEN),
       descRB: resumoDescricao(b ? b.descricao : null),
       descEN: resumoDescricao(a.descricao),
       busca: b ? b.nome : "", extras: false, doses: false
-    });
+    };
+    dividirComboPorRotulo(itemMesclado).forEach(function(x){ resultado.push(x); });
   });
   comRB.forEach(function(b, idx){
     if (usados.indexOf(idx) >= 0) return;
-    var varsRB = b.vars.map(function(v){ return { grupo: "RB", sabor: v.rot || null, preco: v.preco }; });
-    resultado.push({
+    var varsRB = b.vars.map(function(v){ return { grupo: "RB", sabor: v.rot || null, preco: v.preco, pausado: !!b.pausado }; });
+    var itemSo = {
       cat: b.cat, nome: b.nome, combo: true, vars: varsRB,
       descRB: resumoDescricao(b.descricao), descEN: null, busca: "", extras: false, doses: false
-    });
+    };
+    dividirComboPorRotulo(itemSo).forEach(function(x){ resultado.push(x); });
   });
   return resultado;
 }
@@ -1073,7 +1102,7 @@ function construirCatalogoDoCardapio(itensBrutos){
       itensCat = pareiaCombos(porCat[nomeCat]);
     } else {
       itensCat = porCat[nomeCat].map(function(p){
-        return { cat: p.cat, nome: p.nome, vars: p.vars, extras: p.extras, doses: false };
+        return { cat: p.cat, nome: p.nome, vars: p.vars, extras: p.extras, doses: false, pausado: !!p.pausado };
       });
     }
     novoCAT.push({ nome: nomeCat, itens: itensCat });
@@ -1492,6 +1521,12 @@ function verQuadro(){
   elTela.innerHTML = h;
 }
 
+function seloPausa(pausa){
+  if (pausa === "todo") return '<span class="selo-pausa">Pausado no delivery</span>';
+  if (pausa === "parte") return '<span class="selo-pausa">Parte pausada no delivery</span>';
+  return "";
+}
+
 function variosRotulos(it){
   if (!it.combo) return false;
   var sabores = {};
@@ -1508,7 +1543,8 @@ function blocoGruposCombo(it){
   .forEach(function(g){
     var lista = it.vars.filter(function(v){ return v.grupo === g[0]; });
     if (!lista.length) return;
-    h += '<p class="grupo-t">' + esc(g[1]) + '</p>';
+    var grupoPausado = lista.every(function(v){ return v.pausado; });
+    h += '<p class="grupo-t">' + esc(g[1]) + (grupoPausado ? ' <span class="selo-pausa">pausado no delivery</span>' : '') + '</p>';
     lista.forEach(function(v){
       h += '<div class="op"><span class="lb"><span>' +
            esc(v.sabor ? bonito(v.sabor) : "Preço do combo") + '</span></span>';
@@ -1534,8 +1570,9 @@ function linhaItem(it, idx){
   var ab = itemAberto === id;
   var mais = temMais(it);
   var base = precoBase(it);
-  var h = '<button class="item' + (ab ? " ab" : "") + '" data-item="' + esc(id) + '"' + (mais ? "" : " disabled") + '>';
-  h += '<span class="nm">' + esc(it.nome);
+  var pausa = estadoPausa(it);
+  var h = '<button class="item' + (ab ? " ab" : "") + (pausa === "todo" ? " pausado" : "") + '" data-item="' + esc(id) + '"' + (mais ? "" : " disabled") + '>';
+  h += '<span class="nm">' + esc(it.nome) + seloPausa(pausa);
   h += '</span><span class="pr"><span class="v">' + brl(base.preco) + '</span>';
   var rot = rotuloLinha(it);
   if (rot) h += '<span class="rot">' + esc(rot) + '</span>';
@@ -1762,7 +1799,8 @@ function verDonaCategoria(nome){
   } else {
     cardapio.forEach(function(it){
       var base = precoBase(it), rot = rotuloLinha(it);
-      h += '<div class="ro"><span class="nm">' + esc(it.nome) + '</span>';
+      var pausaRo = estadoPausa(it);
+      h += '<div class="ro' + (pausaRo === "todo" ? " pausado" : "") + '"><span class="nm">' + esc(it.nome) + seloPausa(pausaRo) + '</span>';
       h += '<span class="pr"><span class="v">' + brl(base.preco) + '</span>';
       if (rot) h += '<span class="rot">' + esc(rot) + '</span>';
       h += '</span></div>';
@@ -2194,6 +2232,17 @@ document.addEventListener("click", function(e){
   }
 });
 var ultimoCliqueAtualizar = 0;
+/* dispara a função que visita o OlaClick de verdade agora mesmo, em vez de esperar
+   a próxima rodada automática (de hora em hora). Só é usada quando a pessoa aperta
+   "Atualizar" — a sincronização automática ao abrir o app continua só relendo o
+   banco, pra não ficar batendo no OlaClick toda hora sem necessidade. */
+function forcarBuscaNoOlaClick(){
+  return fetch(SUPABASE_URL + "/functions/v1/sync-cardapio", {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + tokenAtivo() }
+  }).catch(function(){ /* se falhar, segue com o que já estiver no banco */ });
+}
+
 elAtualizar.addEventListener("click", function(){
   var agora = Date.now();
   if (agora - ultimoCliqueAtualizar < 120000){
@@ -2203,7 +2252,8 @@ elAtualizar.addEventListener("click", function(){
   ultimoCliqueAtualizar = agora;
   sincronizarDoses(true);
   sincronizarManuais(true);
-  sincronizarCardapio(true);
+  elAtualizar.disabled = true; elAtualizar.textContent = "Buscando…";
+  forcarBuscaNoOlaClick().finally(function(){ sincronizarCardapio(true); });
 });
 
 /* tenta usar a última cópia salva imediatamente (para abrir rápido mesmo offline),
